@@ -1,7 +1,7 @@
 #define MyAppName "Raspberry Pi Imager"
 #define MyAppVersion "@IMAGER_VERSION_STR@"
 #define MyAppPublisher "Raspberry Pi Ltd"
-#define MyAppURL "https://www.raspberrypi.com/"
+#define MyAppURL "https://www.raspberrypi.com/software"
 #define MyAppExeName "rpi-imager.exe"
 
 [Setup]
@@ -25,9 +25,16 @@ SetupIconFile=@CMAKE_SOURCE_DIR@\icons\rpi-imager.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.15063
 PrivilegesRequired=admin
+UninstallDisplayIcon={app}\{#MyAppExeName},0
+UninstallDisplayName={#MyAppName}
+DisableProgramGroupPage=yes
+DisableWelcomePage=no
+DisableReadyPage=yes
+DisableFinishedPage=no
+CreateUninstallRegKey=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
