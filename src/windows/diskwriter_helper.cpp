@@ -79,6 +79,15 @@ int DiskWriterHelper::executeFromCommandLine(const QStringList &args)
     parser.setApplicationDescription("Raspberry Pi Imager Disk Writer Helper");
     parser.addHelpOption();
     
+    // Check if we're running with admin privileges
+    if (!isRunningAsAdmin()) {
+        qCritical() << "WARNING: Helper application is NOT running with administrator privileges!";
+        qCritical() << "         This will likely cause disk write operations to fail.";
+        qCritical() << "         Please ensure the manifest is properly embedded in the executable.";
+    } else {
+        qDebug() << "Helper application running with administrator privileges";
+    }
+    
     QCommandLineOption formatOption(QStringList() << "f" << "format", "Format the drive", "drive");
     parser.addOption(formatOption);
     
@@ -181,14 +190,38 @@ bool DiskWriterHelper::writeImageToDevice(const QString &sourceFile, const QStri
         DWORD errorCode = GetLastError();
         qCritical() << "Failed to open device for writing. Error code:" << errorCode;
         
-        if (errorCode == ERROR_ACCESS_DENIED) {
-            qCritical() << "Access denied - ensure the helper has admin rights";
-        } else if (errorCode == ERROR_FILE_NOT_FOUND) {
-            qCritical() << "Device not found - invalid path:" << devicePath;
-        } else if (errorCode == ERROR_SHARING_VIOLATION) {
-            qCritical() << "Device is in use by another process";
+        // Get a human-readable error message
+        LPVOID lpMsgBuf;
+        DWORD msgLen = FormatMessageA(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+            FORMAT_MESSAGE_FROM_SYSTEM |
+            FORMAT_MESSAGE_IGNORE_INSERTS,
+            NULL,
+            errorCode,
+            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            (LPSTR)&lpMsgBuf,
+            0, NULL );
+            
+        QString errorMessage;
+        if (msgLen > 0) {
+            errorMessage = QString("Error code %1: %2").arg(errorCode).arg(QString::fromUtf8((char*)lpMsgBuf));
+            LocalFree(lpMsgBuf);
+        } else {
+            errorMessage = QString("Error code: %1").arg(errorCode);
         }
         
+        if (errorCode == ERROR_ACCESS_DENIED) {
+            qCritical() << "Access denied - ensure the helper has admin rights";
+            errorMessage += " - Access denied, helper requires administrator privileges";
+        } else if (errorCode == ERROR_FILE_NOT_FOUND) {
+            qCritical() << "Device not found - invalid path:" << devicePath;
+            errorMessage += " - Device not found, invalid path: " + devicePath;
+        } else if (errorCode == ERROR_SHARING_VIOLATION) {
+            qCritical() << "Device is in use by another process";
+            errorMessage += " - Device is in use by another process";
+        }
+        
+        qCritical() << "Detailed error:" << errorMessage;
         sourceFileObj.close();
         return false;
     }
@@ -214,7 +247,31 @@ bool DiskWriterHelper::writeImageToDevice(const QString &sourceFile, const QStri
         
         // Write to device
         if (!WriteFile(deviceHandle, buffer.data(), bytesRead, &bytesWritten, NULL) || bytesRead != bytesWritten) {
-            qCritical() << "Failed to write to device. Error code:" << GetLastError();
+            DWORD errorCode = GetLastError();
+            qCritical() << "Failed to write to device. Error code:" << errorCode;
+            
+            // Get a human-readable error message
+            LPVOID lpMsgBuf;
+            DWORD msgLen = FormatMessageA(
+                FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+                FORMAT_MESSAGE_FROM_SYSTEM |
+                FORMAT_MESSAGE_IGNORE_INSERTS,
+                NULL,
+                errorCode,
+                MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                (LPSTR)&lpMsgBuf,
+                0, NULL );
+                
+            QString errorMessage;
+            if (msgLen > 0) {
+                errorMessage = QString("Write error %1: %2").arg(errorCode).arg(QString::fromUtf8((char*)lpMsgBuf));
+                LocalFree(lpMsgBuf);
+            } else {
+                errorMessage = QString("Write error code: %1").arg(errorCode);
+            }
+            
+            qCritical() << "Detailed error:" << errorMessage;
+            qCritical() << "Attempted to write" << bytesRead << "bytes, but only wrote" << bytesWritten;
             success = false;
             break;
         }
@@ -231,4 +288,24 @@ bool DiskWriterHelper::writeImageToDevice(const QString &sourceFile, const QStri
     sourceFileObj.close();
     
     return success;
+}
+
+// New function to check for administrator privileges
+bool DiskWriterHelper::isRunningAsAdmin() const
+{
+    BOOL isAdmin = FALSE;
+    HANDLE hToken = NULL;
+    
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        TOKEN_ELEVATION elevation;
+        DWORD cbSize = sizeof(TOKEN_ELEVATION);
+        
+        if (GetTokenInformation(hToken, TokenElevation, &elevation, sizeof(elevation), &cbSize)) {
+            isAdmin = elevation.TokenIsElevated;
+        }
+        
+        CloseHandle(hToken);
+    }
+    
+    return isAdmin;
 } 

@@ -9,6 +9,7 @@
 #include <QLocalSocket>
 #include <QTimer>
 #include <QFile>
+#include <windows.h>
 
 class DiskWriterHelper : public QObject
 {
@@ -32,6 +33,8 @@ private:
     bool formatDrive(const QString &drive);
     bool writeToDrive(const QString &drive, const QString &sourceFile);
     bool writeImageToDevice(const QString &sourceFile, const QString &devicePath);
+    bool runHelperWithArgs(const QString &args);
+    QString generateSocketName();
     
     QLocalServer *m_server;
     QLocalSocket *m_clientConnection;
@@ -48,6 +51,9 @@ private:
         VerifyProgress = 2,
         WriteProgress = 3
     };
+
+    // Function to check if running as administrator
+    bool isRunningAsAdmin() const;
 };
 
 #endif // DISKWRITER_HELPER_H 

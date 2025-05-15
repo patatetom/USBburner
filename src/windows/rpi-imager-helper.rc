@@ -1,7 +1,8 @@
 #include <windows.h>
 
 IDI_ICON1 ICON DISCARDABLE "../icons/rpi-imager.ico"
-CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "rpi-imager-helper.manifest"
+
+// The manifest is either embedded via mt.exe or added to an auto-generated RC file
 
 1 VERSIONINFO
 FILEVERSION IMAGER_VERSION_CSV

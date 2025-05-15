@@ -79,19 +79,30 @@ void DriveFormatThread::run()
                     QStringList args;
                     args << "-y" << driveLetter;
                     
-                    // Try to find fat32format.exe in application directory
-                    QString fat32formatPath = QCoreApplication::applicationDirPath()+"/fat32format.exe";
+                    // Try to find fat32format.exe in multiple possible locations
+                    QStringList searchPaths;
+                    searchPaths << QCoreApplication::applicationDirPath() + "/fat32format.exe"
+                               << QCoreApplication::applicationDirPath() + "/../fat32format.exe"
+                               << QCoreApplication::applicationDirPath() + "/../dependencies/fat32format/fat32format.exe"
+                               << QCoreApplication::applicationDirPath() + "/../../dependencies/fat32format/fat32format.exe"
+                               << QCoreApplication::applicationDirPath() + "/../../build/dependencies/fat32format/fat32format.exe"
+                               << QCoreApplication::applicationDirPath() + "/../../build/deploy/fat32format.exe";
                     
-                    if (!QFile::exists(fat32formatPath)) {
-                        // If we're running from the helper, try looking in the parent directory
-                        fat32formatPath = QCoreApplication::applicationDirPath()+"/../fat32format.exe";
-                        
-                        if (!QFile::exists(fat32formatPath)) {
-                            qDebug() << "Could not find fat32format.exe in" << QCoreApplication::applicationDirPath() 
-                                    << "or" << QCoreApplication::applicationDirPath()+"/../";
-                            emit error(tr("fat32format.exe not found in the expected locations"));
-                            return;
+                    QString fat32formatPath;
+                    for (const QString &path : searchPaths) {
+                        if (QFile::exists(path)) {
+                            fat32formatPath = path;
+                            break;
                         }
+                    }
+                    
+                    if (fat32formatPath.isEmpty()) {
+                        qDebug() << "Could not find fat32format.exe in any of the following locations:";
+                        for (const QString &path : searchPaths) {
+                            qDebug() << "  -" << path;
+                        }
+                        emit error(tr("fat32format.exe not found"));
+                        return;
                     }
                     
                     qDebug() << "Running" << fat32formatPath << "with args:" << args;
@@ -108,7 +119,11 @@ void DriveFormatThread::run()
 
                     if (f32format.exitStatus() || f32format.exitCode())
                     {
-                        emit error(tr("Error running fat32format: %1").arg(QString(f32format.readAll())));
+                        QByteArray stdOut = f32format.readAllStandardOutput();
+                        QByteArray stdErr = f32format.readAllStandardError();
+                        QByteArray combinedOutput = stdOut + "\n" + stdErr;
+                        qDebug() << "fat32format error output:" << combinedOutput;
+                        emit error(tr("Error running fat32format: %1").arg(QString(combinedOutput)));
                     }
                     else
                     {
