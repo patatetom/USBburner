@@ -78,7 +78,24 @@ void DriveFormatThread::run()
                     QProcess f32format;
                     QStringList args;
                     args << "-y" << driveLetter;
-                    f32format.start(QCoreApplication::applicationDirPath()+"/fat32format.exe", args);
+                    
+                    // Try to find fat32format.exe in application directory
+                    QString fat32formatPath = QCoreApplication::applicationDirPath()+"/fat32format.exe";
+                    
+                    if (!QFile::exists(fat32formatPath)) {
+                        // If we're running from the helper, try looking in the parent directory
+                        fat32formatPath = QCoreApplication::applicationDirPath()+"/../fat32format.exe";
+                        
+                        if (!QFile::exists(fat32formatPath)) {
+                            qDebug() << "Could not find fat32format.exe in" << QCoreApplication::applicationDirPath() 
+                                    << "or" << QCoreApplication::applicationDirPath()+"/../";
+                            emit error(tr("fat32format.exe not found in the expected locations"));
+                            return;
+                        }
+                    }
+                    
+                    qDebug() << "Running" << fat32formatPath << "with args:" << args;
+                    f32format.start(fat32formatPath, args);
                     if (!f32format.waitForStarted())
                     {
                         emit error(tr("Error starting fat32format"));

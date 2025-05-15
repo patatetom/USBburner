@@ -358,6 +358,8 @@ elseif (WIN32)
         windows/winfile.h
         windows/winwlancredentials.h
         windows/winwlancredentials.cpp
+        #windows/diskwriter_helper_main.cpp
+        windows/elevationhelper.cpp
     )
     set(DEPENDENCIES windows/rpi-imager.rc)
     set(EXTRALIBS setupapi wlanapi Bcrypt.dll)
@@ -437,6 +439,21 @@ qt_add_lupdate(TS_FILES ${TRANSLATIONS} SOURCE_TARGETS ${PROJECT_NAME} OPTIONS -
 if (WIN32)
     # Adding WIN32 prevents a console window being opened on Windows
     add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS} ${DEPENDENCIES})
+    
+    # Helper executable to run privileged operations
+    add_executable(rpi-imager-helper
+        windows/diskwriter_helper_main.cpp
+        windows/diskwriter_helper.cpp
+        windows/diskwriter_helper.h
+        windows/rpi-imager-helper.rc
+        driveformatthread.cpp
+        driveformatthread.h
+        dependencies/mountutils/src/mountutils_helper.cpp
+        dependencies/drivelist/src/windows/list.cpp
+    )
+    set_property(TARGET rpi-imager-helper PROPERTY AUTOMOC ON)
+    target_include_directories(rpi-imager-helper PRIVATE . dependencies/mountutils/src dependencies/drivelist/src)
+    target_link_libraries(rpi-imager-helper PRIVATE ${QT}::Core ${QT}::Network setupapi)
 else()
     add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${DEPENDENCIES})
 endif()
@@ -517,6 +534,7 @@ if (WIN32)
     # Bundled fat32format
     add_subdirectory(dependencies/fat32format)
     add_dependencies(${PROJECT_NAME} fat32format)
+    add_dependencies(${PROJECT_NAME} rpi-imager-helper)
 
     # Strip debug symbols
     add_custom_command(TARGET ${PROJECT_NAME}

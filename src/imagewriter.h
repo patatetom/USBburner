@@ -26,6 +26,10 @@
 #include "hwlistmodel.h"
 #include "oslistmodel.h"
 
+#ifdef Q_OS_WIN
+#include "windows/elevationhelper.h"
+#endif
+
 class QQmlApplicationEngine;
 class DownloadThread;
 class DownloadExtractThread;

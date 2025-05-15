@@ -272,6 +272,29 @@ void ImageWriter::startWrite()
     if (!readyToWrite())
         return;
 
+#ifdef Q_OS_WIN
+    if (_src.toString() == "internal://format")
+    {
+        ElevationHelper *helper = new ElevationHelper(this);
+        connect(helper, &ElevationHelper::error, this, &ImageWriter::onError);
+        connect(helper, &ElevationHelper::downloadProgress, this, &ImageWriter::downloadProgress);
+        connect(helper, &ElevationHelper::verifyProgress, this, &ImageWriter::verifyProgress);
+        connect(helper, &ElevationHelper::writeProgress, [this](qint64 now, qint64 total) {
+            emit downloadProgress(now, total); // Reuse downloadProgress signal for write progress
+        });
+        
+        startProgressPolling();
+        
+        if (helper->runFormatDrive(_dst))
+        {
+            onSuccess();
+        }
+        
+        stopProgressPolling();
+        helper->deleteLater();
+        return;
+    }
+#else
     if (_src.toString() == "internal://format")
     {
         DriveFormatThread *dft = new DriveFormatThread(_dst.toLatin1(), this);
@@ -280,6 +303,7 @@ void ImageWriter::startWrite()
         dft->start();
         return;
     }
+#endif
 
     QByteArray urlstr = _src.toString(_src.FullyEncoded).toLatin1();
     QString lowercaseurl = urlstr.toLower();
@@ -321,7 +345,46 @@ void ImageWriter::startWrite()
 
     if (QUrl(urlstr).isLocalFile())
     {
+#ifdef Q_OS_WIN
+        // Create thread first
         _thread = new LocalFileExtractThread(urlstr, _dst.toLatin1(), _expectedHash, this);
+
+        // Check if we're writing to a physical drive
+        if (_dst.startsWith("\\\\.\\PHYSICALDRIVE"))
+        {
+            ElevationHelper *helper = new ElevationHelper(this);
+            connect(helper, &ElevationHelper::error, this, &ImageWriter::onError);
+            connect(helper, &ElevationHelper::downloadProgress, this, &ImageWriter::downloadProgress);
+            connect(helper, &ElevationHelper::verifyProgress, this, &ImageWriter::verifyProgress);
+            connect(helper, &ElevationHelper::writeProgress, [this](qint64 now, qint64 total) {
+                emit downloadProgress(now, total); // Reuse downloadProgress signal for write progress
+            });
+            
+            startProgressPolling();
+            
+            if (helper->runWriteToDrive(_dst, QUrl(urlstr).toLocalFile()))
+            {
+                _thread->start();
+            }
+            else
+            {
+                _thread->deleteLater();
+                _thread = nullptr;
+                stopProgressPolling();
+            }
+            
+            helper->deleteLater();
+        }
+        else
+        {
+            DriveFormatThread *dft = new DriveFormatThread(_dst.toLatin1(), this);
+            connect(dft, SIGNAL(success()), _thread, SLOT(start()));
+            connect(dft, SIGNAL(error(QString)), SLOT(onError(QString)));
+            dft->start();
+        }
+#else
+        _thread = new LocalFileExtractThread(urlstr, _dst.toLatin1(), _expectedHash, this);
+#endif
     }
     else
     {
@@ -390,10 +453,46 @@ void ImageWriter::startWrite()
     if (_multipleFilesInZip)
     {
         static_cast<DownloadExtractThread *>(_thread)->enableMultipleFileExtraction();
+#ifdef Q_OS_WIN
+        if (_dst.startsWith("\\\\.\\PHYSICALDRIVE"))
+        {
+            ElevationHelper *helper = new ElevationHelper(this);
+            connect(helper, &ElevationHelper::error, this, &ImageWriter::onError);
+            connect(helper, &ElevationHelper::downloadProgress, this, &ImageWriter::downloadProgress);
+            connect(helper, &ElevationHelper::verifyProgress, this, &ImageWriter::verifyProgress);
+            connect(helper, &ElevationHelper::writeProgress, [this](qint64 now, qint64 total) {
+                emit downloadProgress(now, total); // Reuse downloadProgress signal for write progress
+            });
+            
+            startProgressPolling();
+            
+            if (helper->runWriteToDrive(_dst, QUrl(urlstr).toLocalFile()))
+            {
+                _thread->start();
+            }
+            else
+            {
+                _thread->deleteLater();
+                _thread = nullptr;
+                stopProgressPolling();
+            }
+            
+            helper->deleteLater();
+            return;
+        }
+        else
+        {
+            DriveFormatThread *dft = new DriveFormatThread(_dst.toLatin1(), this);
+            connect(dft, SIGNAL(success()), _thread, SLOT(start()));
+            connect(dft, SIGNAL(error(QString)), SLOT(onError(QString)));
+            dft->start();
+        }
+#else
         DriveFormatThread *dft = new DriveFormatThread(_dst.toLatin1(), this);
         connect(dft, SIGNAL(success()), _thread, SLOT(start()));
         connect(dft, SIGNAL(error(QString)), SLOT(onError(QString)));
         dft->start();
+#endif
     }
     else
     {
