@@ -49,7 +49,7 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\{#MyAppExeName}"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\{#MyAppExeName}"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName}"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "Software\Classes\.zip\OpenWithProgIds"; ValueType: string; ValueName: "RPI_IMAGINGUTILITY"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKLM; Subkey: "Software\Classes\.gz\OpenWithProgIds"; ValueType: string; ValueName: "RPI_IMAGINGUTILITY"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKLM; Subkey: "Software\Classes\.xz\OpenWithProgIds"; ValueType: string; ValueName: "RPI_IMAGINGUTILITY"; ValueData: ""; Flags: uninsdeletevalue
