@@ -21,10 +21,12 @@
 #include <QSettings>
 #include <QFont>
 #include <QFontDatabase>
+#include <QDir>
+#include <QFile>
+#include <QDateTime>
 #ifdef QT_NO_WIDGETS
 #include <xf86drm.h>
 #include <xf86drmMode.h>
-#include <QDir>
 #endif
 #ifndef QT_NO_WIDGETS
 #include <QtWidgets/QApplication>
@@ -272,11 +274,65 @@ int main(int argc, char *argv[])
                 qInstallMessageHandler(consoleMsgHandler);
             }
 #endif
+
+            // Create a log file in the user's Documents folder
+            QString logPath = QDir::homePath() + "/Documents/rpi-imager-debug-log.txt";
+            QFile *logFile = new QFile(logPath);
+            
+            if (logFile->open(QIODevice::WriteOnly | QIODevice::Append)) {
+                cerr << "Debug log file created at: " << logPath << endl;
+                
+                // Install a custom message handler that logs to both console and file
+                qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &context, const QString &msg) {
+                    static QFile *s_logFile = static_cast<QFile*>(qApp->property("logFile").value<void*>());
+                    static QTextStream logStream(s_logFile);
+                    
+                    // Format the message with timestamp
+                    QString txt = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz ");
+                    
+                    switch (type) {
+                        case QtDebugMsg:
+                            txt += QString("Debug: %1").arg(msg);
+                            break;
+                        case QtInfoMsg:
+                            txt += QString("Info: %1").arg(msg);
+                            break;
+                        case QtWarningMsg:
+                            txt += QString("Warning: %1").arg(msg);
+                            break;
+                        case QtCriticalMsg:
+                            txt += QString("Critical: %1").arg(msg);
+                            break;
+                        case QtFatalMsg:
+                            txt += QString("Fatal: %1").arg(msg);
+                            break;
+                    }
+                    
+                    // Log to file
+                    logStream << txt << endl;
+                    logStream.flush();
+                    
+                    // Log to console
+                    cerr << txt << endl;
+                });
+                
+                // Store the log file pointer for use by message handler
+                app.setProperty("logFile", QVariant::fromValue<void*>(logFile));
+            } else {
+                delete logFile;
+                cerr << "Failed to create debug log file at: " << logPath << endl;
+            }
         }
         else if (args[i] == "--help")
         {
             cerr << "rpi-imager [--debug] [--version] [--repo <repository URL>] [--qm <custom qm translation file>] [--disable-telemetry] [<image file to write>]" << endl;
             cerr << "-OR- rpi-imager --cli [--disable-verify] [--sha256 <expected hash>] [--debug] [--quiet] <image file to write> <destination drive device>" << endl;
+            cerr << "Options:" << endl;
+            cerr << "  --debug            Enable debug output and create a debug log file in Documents folder" << endl;
+            cerr << "  --version          Display version and repository information" << endl;
+            cerr << "  --repo URL         Use custom repository URL instead of the default" << endl;
+            cerr << "  --qm FILE          Use custom translation file" << endl;
+            cerr << "  --disable-telemetry Disable telemetry" << endl;
             return 0;
         }
         else if (args[i] == "--version")

@@ -22,6 +22,8 @@
 #include <QProcess>
 #include <QSettings>
 #include <QFuture>
+#include <QUuid>
+#include <QDir>
 #include <QtConcurrent/qtconcurrentrun.h>
 #include <QtNetwork/QNetworkProxy>
 
@@ -29,6 +31,10 @@
 #include <sys/ioctl.h>
 #include <linux/fs.h>
 #include "linux/udisks2api.h"
+#endif
+
+#ifdef Q_OS_WIN
+#include "windows/elevationhelper.h"
 #endif
 
 using namespace std;
@@ -168,6 +174,10 @@ bool DownloadThread::_openAndPrepareDevice()
                 return false;
             }
         }
+        
+        // Skip direct drive access for physical drives - this should be handled by ElevationHelper
+        qDebug() << "Physical drive detected. Disk operations will be handled by ElevationHelper.";
+        return true;
     }
 
     auto l = Drivelist::ListStorageDevices();
@@ -336,7 +346,30 @@ bool DownloadThread::_openAndPrepareDevice()
 
 void DownloadThread::run()
 {
+#ifdef Q_OS_WIN
+    // Check early if this is a physical drive
+    std::regex windriveregex("\\\\\\\\.\\\\PHYSICALDRIVE([0-9]+)", std::regex_constants::icase);
+    bool isPhysicalDrive = !_filename.isEmpty() && std::regex_match(_filename.constData(), windriveregex);
+    
+    // For physical drives, we'll write to the cache file only and handle the actual disk write later
+    if (isPhysicalDrive) {
+        qDebug() << "Physical drive detected. Download will go to cache, disk operations will be handled by ElevationHelper afterwards.";
+        
+        if (!_cacheEnabled) {
+            // If no cache file is set, create a temporary one
+            QString tempFile = QDir::tempPath() + "/rpi-imager-" + QUuid::createUuid().toString(QUuid::WithoutBraces) + ".tmp";
+            setCacheFile(tempFile, 0);
+            
+            if (!_cacheEnabled) {
+                emit error(tr("Unable to create temporary file for download"));
+                return;
+            }
+        }
+    }
+    else if (isImage() && !_openAndPrepareDevice())
+#else
     if (isImage() && !_openAndPrepareDevice())
+#endif
     {
         return;
     }
@@ -533,12 +566,32 @@ size_t DownloadThread::_writeFile(const char *buf, size_t len)
         _firstBlockSize = len;
         ::memcpy(_firstBlock, buf, len);
 
+#ifdef Q_OS_WIN
+        std::regex windriveregex("\\\\\\\\.\\\\PHYSICALDRIVE([0-9]+)", std::regex_constants::icase);
+        if (std::regex_match(_filename.constData(), windriveregex))
+        {
+            // Physical drive detected, operations will be handled by ElevationHelper
+            // No need for debug message here as it would spam the log
+            return len;
+        }
+#endif
         return _file.seek(len) ? len : 0;
     }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     QFuture<void> wh = QtConcurrent::run(&DownloadThread::_hashData, this, buf, len);
 #else
     QFuture<void> wh = QtConcurrent::run(this, &DownloadThread::_hashData, buf, len);
+#endif
+
+#ifdef Q_OS_WIN
+    std::regex windriveregex("\\\\\\\\.\\\\PHYSICALDRIVE([0-9]+)", std::regex_constants::icase);
+    if (std::regex_match(_filename.constData(), windriveregex))
+    {
+        // Physical drive detected, operations will be handled by ElevationHelper
+        // No need for debug message here as it would spam the log
+        wh.waitForFinished();
+        return len;
+    }
 #endif
 
     qint64 written = _file.write(buf, len);
@@ -680,12 +733,22 @@ void DownloadThread::_onWriteError()
 
 void DownloadThread::_closeFiles()
 {
-    _file.close();
 #ifdef Q_OS_WIN
-    _volumeFile.close();
+    std::regex windriveregex("\\\\\\\\.\\\\PHYSICALDRIVE([0-9]+)", std::regex_constants::icase);
+    bool isPhysicalDrive = std::regex_match(_filename.constData(), windriveregex);
+    
+    if (!isPhysicalDrive)
+    {
 #endif
+    _file.close();
     if (_cachefile.isOpen())
         _cachefile.close();
+#ifdef Q_OS_WIN
+    }
+    
+    // Always close the volume file, even for physical drives
+    _volumeFile.close();
+#endif
 }
 
 void DownloadThread::_writeComplete()
@@ -706,6 +769,92 @@ void DownloadThread::_writeComplete()
         _cachefile.close();
         emit cacheFileUpdated(computedHash);
     }
+
+#ifdef Q_OS_WIN
+    std::regex windriveregex("\\\\\\\\.\\\\PHYSICALDRIVE([0-9]+)", std::regex_constants::icase);
+    bool isPhysicalDrive = std::regex_match(_filename.constData(), windriveregex);
+    
+    if (isPhysicalDrive)
+    {
+        qDebug() << "Physical drive detected. Disk operations will be handled by ElevationHelper.";
+        
+        // Get source file path - for physical drives we should always have a cache file
+        QString sourceFile;
+        if (_cacheEnabled && _cachefile.exists()) {
+            sourceFile = _cachefile.fileName();
+            qDebug() << "Using cache file for writing to physical drive:" << sourceFile;
+        } 
+        else if (_url.startsWith("file://")) {
+            sourceFile = QUrl(_url).toLocalFile();
+            qDebug() << "Using local source file for writing to physical drive:" << sourceFile;
+        }
+        else {
+            DownloadThread::_onDownloadError(tr("Cannot write to physical device without a local source file or cache file."));
+            _closeFiles();
+            return;
+        }
+        
+        // Close the cache file before writing to ensure all data is flushed
+        if (_cachefile.isOpen()) {
+            _cachefile.close();
+        }
+        
+        // Use ElevationHelper to write the image
+        ElevationHelper *helper = ElevationHelper::instance();
+        
+        // Connect the helper's progress signals to track progress
+        QObject::connect(helper, &ElevationHelper::writeProgress, this, [this](qint64 now, qint64 total) {
+            // Update progress tracking variables
+            if (total > 0) {
+                _bytesWritten = now;
+                // We don't need to update _lastDlTotal as it was set during download
+            }
+        });
+        
+        // Also connect download progress in case the helper needs to download
+        QObject::connect(helper, &ElevationHelper::downloadProgress, this, [this](qint64 now, qint64 total) {
+            // Update download progress tracking variables
+            if (total > 0) {
+                _lastDlNow = now;
+                _lastDlTotal = total;
+            }
+        });
+        
+        // Perform the actual write
+        if (!helper->runWriteToDrive(_filename, sourceFile)) {
+            // Clean up all connections
+            QObject::disconnect(helper, &ElevationHelper::writeProgress, this, nullptr);
+            QObject::disconnect(helper, &ElevationHelper::downloadProgress, this, nullptr);
+            
+            DownloadThread::_onDownloadError(tr("Failed to write to physical device using helper application."));
+            _closeFiles();
+            return;
+        }
+        
+        // Clean up all connections
+        QObject::disconnect(helper, &ElevationHelper::writeProgress, this, nullptr);
+        QObject::disconnect(helper, &ElevationHelper::downloadProgress, this, nullptr);
+        
+        // Skip verification and customization if performed by helper
+        _closeFiles();
+        
+        // Perform customization if required
+        if (!_config.isEmpty() || !_cmdline.isEmpty() || !_firstrun.isEmpty() || !_cloudinit.isEmpty())
+        {
+            emit finalizing();
+            _customizeImage();
+        }
+        
+        // Skip to eject if needed
+        if (_ejectEnabled)
+        {
+            eject_disk(_filename.constData());
+        }
+        
+        emit success();
+        return;
+    }
+#endif
 
     if (!_file.flush())
     {
@@ -744,6 +893,17 @@ void DownloadThread::_writeComplete()
 
     if (_firstBlock)
     {
+#ifdef Q_OS_WIN
+        std::regex windriveregex("\\\\\\\\.\\\\PHYSICALDRIVE([0-9]+)", std::regex_constants::icase);
+        if (std::regex_match(_filename.constData(), windriveregex))
+        {
+            qDebug() << "Skipping first block write for physical drive - should be handled by ElevationHelper";
+            qFreeAligned(_firstBlock);
+            _firstBlock = nullptr;
+        }
+        else
+        {
+#endif
         qDebug() << "Writing first block (which we skipped at first)";
         _file.seek(0);
         if (!_file.write(_firstBlock, _firstBlockSize) || !_file.flush())
@@ -757,14 +917,27 @@ void DownloadThread::_writeComplete()
         _bytesWritten += _firstBlockSize;
         qFreeAligned(_firstBlock);
         _firstBlock = nullptr;
+#ifdef Q_OS_WIN
+        }
+#endif
     }
 
+#ifdef Q_OS_WIN
+    std::regex windriveregex2("\\\\\\\\.\\\\PHYSICALDRIVE([0-9]+)", std::regex_constants::icase);
+    bool isPhysicalDrive2 = std::regex_match(_filename.constData(), windriveregex2);
+    
+    if (!isPhysicalDrive2)
+    {
+#endif
     if (!_file.flush())
     {
         DownloadThread::_onDownloadError(tr("Error writing to storage (while flushing)"));
         _closeFiles();
         return;
     }
+#ifdef Q_OS_WIN
+    }
+#endif
 
 #ifndef Q_OS_WIN
     if (::fsync(_file.handle()) != 0) {
@@ -798,6 +971,43 @@ void DownloadThread::_writeComplete()
 
 bool DownloadThread::_verify()
 {
+#ifdef Q_OS_WIN
+    std::regex windriveregex("\\\\\\\\.\\\\PHYSICALDRIVE([0-9]+)", std::regex_constants::icase);
+    if (std::regex_match(_filename.constData(), windriveregex))
+    {
+        // For physical drives on Windows, use the elevation helper for verification
+        qDebug() << "Using ElevationHelper for image verification";
+        
+        // We need the source file path from the URL
+        QString sourceFilePath;
+        if (_url.startsWith("file://")) {
+            sourceFilePath = QUrl(_url).toLocalFile();
+        } else {
+            // If we don't have a local source file, verification is not possible
+            qDebug() << "Verification not possible for non-local files";
+            return true;
+        }
+        
+        // Connect the helper's progress signals to track verification progress
+        ElevationHelper *helper = ElevationHelper::instance();
+        QObject::connect(helper, &ElevationHelper::verifyProgress, this, [this](qint64 now, qint64 total) {
+            // Update verification progress tracking variables
+            if (total > 0) {
+                _lastVerifyNow = now;
+                _verifyTotal = total;
+            }
+        });
+        
+        // Use ElevationHelper to verify the image
+        bool success = helper->runVerifyImage(_filename, sourceFilePath, _expectedHash);
+        
+        // Clean up the connection
+        QObject::disconnect(helper, &ElevationHelper::verifyProgress, this, nullptr);
+        
+        return success;
+    }
+#endif
+
     char *verifyBuf = (char *) qMallocAligned(IMAGEWRITER_VERIFY_BLOCKSIZE, 4096);
     _lastVerifyNow = 0;
     _verifyTotal = _file.pos();
@@ -899,6 +1109,29 @@ void DownloadThread::setImageCustomization(const QByteArray &config, const QByte
 bool DownloadThread::_customizeImage()
 {
     emit preparationStatusUpdate(tr("Customizing image"));
+
+#ifdef Q_OS_WIN
+    std::regex windriveregex("\\\\\\\\.\\\\PHYSICALDRIVE([0-9]+)", std::regex_constants::icase);
+    if (std::regex_match(_filename.constData(), windriveregex))
+    {
+        // For physical drives on Windows, use the elevation helper
+        qDebug() << "Using ElevationHelper for image customization";
+        
+        // Clean up the _firstBlock memory if it exists
+        if (_firstBlock) {
+            qFreeAligned(_firstBlock);
+            _firstBlock = nullptr;
+        }
+        
+        // Use ElevationHelper to customize the image
+        ElevationHelper *helper = ElevationHelper::instance();
+        bool success = helper->runCustomizeImage(_filename, _config, _cmdline, _firstrun, 
+                                              _cloudinit, _cloudinitNetwork, _initFormat);
+        
+        emit finalizing();
+        return success;
+    }
+#endif
 
     try
     {

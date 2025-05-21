@@ -2,7 +2,10 @@
 
 IDI_ICON1 ICON DISCARDABLE "../icons/rpi-imager.ico"
 
-// The manifest is either embedded via mt.exe or added to an auto-generated RC file
+// Direct manifest inclusion
+// This is the preferred method for embedding manifests via RC
+// CREATEPROCESS_MANIFEST_RESOURCE_ID (1) RT_MANIFEST (24)
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "rpi-imager-helper.manifest"
 
 1 VERSIONINFO
 FILEVERSION IMAGER_VERSION_CSV

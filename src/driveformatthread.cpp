@@ -12,6 +12,14 @@
 #include <QTemporaryFile>
 #include <QCoreApplication>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+// Only include ElevationHelper for the main application, not for the helper
+#ifndef RPI_HELPER_APP
+#include "windows/elevationhelper.h"
+#endif
+#endif
+
 #ifdef Q_OS_LINUX
 #include "linux/udisks2api.h"
 #include <unistd.h>
@@ -36,9 +44,25 @@ void DriveFormatThread::run()
 
     if (std::regex_match(_device.constData(), m, windriveregex))
     {
+#ifndef RPI_HELPER_APP
+        // In main application, use ElevationHelper to delegate to helper app
+        ElevationHelper *helper = ElevationHelper::instance();
+        
+        // Connect signals for progress and errors
+        connect(helper, &ElevationHelper::error, [this](const QString &msg) {
+            emit error(msg);
+        });
+        
+        // Run format operation through the helper
+        if (helper->runFormatDrive(QString::fromLatin1(_device)))
+        {
+            emit success();
+        }
+#else
+        // This code is for the helper application itself
         QByteArray nr = QByteArray::fromStdString(m[1]);
 
-        qDebug() << "Formatting Windows drive #" << nr << "(" << _device << ")";
+        qDebug() << "Helper formatting Windows drive #" << nr << "(" << _device << ")";
 
         QProcess proc;
         QByteArray diskpartCmds =
@@ -75,6 +99,7 @@ void DriveFormatThread::run()
                         driveLetter.chop(1);
                     qDebug() << "Drive letter of device:" << driveLetter;
 
+                    // Format using fat32format.exe
                     QProcess f32format;
                     QStringList args;
                     args << "-y" << driveLetter;
@@ -106,35 +131,33 @@ void DriveFormatThread::run()
                     }
                     
                     qDebug() << "Running" << fat32formatPath << "with args:" << args;
+                    
                     f32format.start(fat32formatPath, args);
                     if (!f32format.waitForStarted())
                     {
-                        emit error(tr("Error starting fat32format"));
+                        emit error(tr("Error starting fat32format process"));
                         return;
                     }
-
-                    //f32format.write("y\r\n");
-                    f32format.closeWriteChannel();
-                    f32format.waitForFinished(120000);
-
-                    if (f32format.exitStatus() || f32format.exitCode())
+                    
+                    // Wait for the process to complete
+                    f32format.waitForFinished(120000); // Wait up to 2 minutes
+                    
+                    if (f32format.exitStatus() != QProcess::NormalExit || f32format.exitCode() != 0)
                     {
-                        QByteArray stdOut = f32format.readAllStandardOutput();
-                        QByteArray stdErr = f32format.readAllStandardError();
-                        QByteArray combinedOutput = stdOut + "\n" + stdErr;
-                        qDebug() << "fat32format error output:" << combinedOutput;
-                        emit error(tr("Error running fat32format: %1").arg(QString(combinedOutput)));
+                        QByteArray stdoutput = f32format.readAllStandardOutput();
+                        QByteArray stderror = f32format.readAllStandardError();
+                        emit error(tr("Error running fat32format. Exit code: %1").arg(f32format.exitCode()));
+                        return;
                     }
-                    else
-                    {
-                        emit success();
-                    }
+                    
+                    emit success();
                     return;
                 }
             }
 
             emit error(tr("Error determining new drive letter"));
         }
+#endif
     }
     else
     {

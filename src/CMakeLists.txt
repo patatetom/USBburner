@@ -441,19 +441,32 @@ if (WIN32)
     add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS} ${DEPENDENCIES})
     
     # Helper executable to run privileged operations
-    add_executable(rpi-imager-helper
+    add_executable(rpi-imager-helper WIN32
         windows/diskwriter_helper_main.cpp
         windows/diskwriter_helper.cpp
         windows/diskwriter_helper.h
         windows/rpi-imager-helper.rc
+        windows/winfile.cpp
+        windows/winfile.h
+        devicewrapper.cpp
+        devicewrapper.h
+        devicewrapperfatpartition.cpp
+        devicewrapperfatpartition.h
+        devicewrapperpartition.cpp
+        devicewrapperpartition.h
+        devicewrapperblockcacheentry.cpp
+        devicewrapperblockcacheentry.h
+        devicewrapperstructs.h
         driveformatthread.cpp
         driveformatthread.h
         dependencies/mountutils/src/mountutils_helper.cpp
         dependencies/drivelist/src/windows/list.cpp
     )
     set_property(TARGET rpi-imager-helper PROPERTY AUTOMOC ON)
-    target_include_directories(rpi-imager-helper PRIVATE . dependencies/mountutils/src dependencies/drivelist/src)
-    target_link_libraries(rpi-imager-helper PRIVATE ${QT}::Core ${QT}::Network setupapi)
+    target_include_directories(rpi-imager-helper PRIVATE . dependencies/mountutils/src dependencies/drivelist/src ${CURL_INCLUDE_DIR} ${LibArchive_INCLUDE_DIR} ${LIBLZMA_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS} ${ZSTD_INCLUDE_DIR})
+    target_link_libraries(rpi-imager-helper PRIVATE ${QT}::Core ${QT}::Network ${CURL_LIBRARIES} ${LibArchive_LIBRARIES} ${ZSTD_LIBRARIES} ${LIBLZMA_LIBRARIES} setupapi Bcrypt.dll)
+    # Define a preprocessor symbol to identify the helper application
+    target_compile_definitions(rpi-imager-helper PRIVATE RPI_HELPER_APP)
     # Bundled fat32format
     add_subdirectory(dependencies/fat32format)
     add_dependencies(rpi-imager-helper fat32format)
@@ -469,6 +482,13 @@ if (WIN32)
             endif()
         endif()
         
+        # Copy the manifest to output directory
+        add_custom_command(TARGET rpi-imager-helper POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_CURRENT_SOURCE_DIR}/windows/rpi-imager-helper.manifest"
+                "$<TARGET_FILE_DIR:rpi-imager-helper>/rpi-imager-helper.manifest"
+            COMMENT "Copying manifest file to output directory")
+            
         # Try to find mt.exe from the Windows SDK
         find_program(MT_TOOL 
             NAMES mt.exe
@@ -486,35 +506,11 @@ if (WIN32)
 
         if(MT_TOOL)
             add_custom_command(TARGET rpi-imager-helper POST_BUILD
-                COMMAND "${MT_TOOL}" -manifest "${CMAKE_CURRENT_SOURCE_DIR}/windows/rpi-imager-helper.manifest" -outputresource:"$<TARGET_FILE:rpi-imager-helper>;1"
+                COMMAND "${MT_TOOL}" -manifest "$<TARGET_FILE_DIR:rpi-imager-helper>/rpi-imager-helper.manifest" -outputresource:"$<TARGET_FILE:rpi-imager-helper>;1" -nologo
                 COMMENT "Embedding UAC manifest into helper executable using ${MT_TOOL}")
         else()
-            # Fallback - use the rc file method to embed the manifest
-            message(STATUS "mt.exe not found - using RC file approach to embed manifest")
-            
-            set(MANIFEST_SOURCE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/windows/rpi-imager-helper.manifest")
-            if(NOT EXISTS "${MANIFEST_SOURCE_FILE}")
-                message(FATAL_ERROR "Required manifest file not found: ${MANIFEST_SOURCE_FILE}")
-            endif()
-            
-            # Generate a custom RC file with the correct manifest path
-            set(GENERATED_RC_FILE "${CMAKE_CURRENT_BINARY_DIR}/rpi-imager-helper-with-manifest.rc")
-            
-            # Read the original RC file content
-            file(READ "${CMAKE_CURRENT_SOURCE_DIR}/windows/rpi-imager-helper.rc" RC_CONTENT)
-            
-            # Create a new RC file with the manifest reference
-            file(WRITE "${GENERATED_RC_FILE}" "${RC_CONTENT}\n\n")
-            file(APPEND "${GENERATED_RC_FILE}" "// Auto-generated manifest inclusion\n")
-            file(APPEND "${GENERATED_RC_FILE}" "// RT_MANIFEST = 24, CREATEPROCESS_MANIFEST_RESOURCE_ID = 1\n")
-            file(APPEND "${GENERATED_RC_FILE}" "1 24 \"${MANIFEST_SOURCE_FILE}\"\n")
-            
-            # Replace the original RC file in the target sources
-            target_sources(rpi-imager-helper PRIVATE "${GENERATED_RC_FILE}")
-            
-            # We need to exclude the original RC file to avoid conflicts
-            set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/windows/rpi-imager-helper.rc" 
-                                      PROPERTIES HEADER_FILE_ONLY TRUE)
+            # Fallback - warn user about potential UAC issues
+            message(STATUS "WARNING: mt.exe not found. UAC elevation may not work correctly.")
         endif()
     endif()
 else()
@@ -664,6 +660,7 @@ if (WIN32)
         POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.exe" "${CMAKE_BINARY_DIR}/dependencies/fat32format/fat32format.exe"
+            "${CMAKE_BINARY_DIR}/rpi-imager-helper.exe"
             "${CMAKE_SOURCE_DIR}/../license.txt" "${CMAKE_SOURCE_DIR}/windows/rpi-imager-cli.cmd"
             "${CMAKE_BINARY_DIR}/deploy")
 

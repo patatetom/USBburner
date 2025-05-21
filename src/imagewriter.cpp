@@ -275,13 +275,15 @@ void ImageWriter::startWrite()
 #ifdef Q_OS_WIN
     if (_src.toString() == "internal://format")
     {
-        ElevationHelper *helper = new ElevationHelper(this);
-        connect(helper, &ElevationHelper::error, this, &ImageWriter::onError);
-        connect(helper, &ElevationHelper::downloadProgress, this, &ImageWriter::downloadProgress);
-        connect(helper, &ElevationHelper::verifyProgress, this, &ImageWriter::verifyProgress);
-        connect(helper, &ElevationHelper::writeProgress, [this](qint64 now, qint64 total) {
-            emit downloadProgress(now, total); // Reuse downloadProgress signal for write progress
-        });
+        ElevationHelper *helper = ElevationHelper::instance();
+        connect(helper, &ElevationHelper::error, this, &ImageWriter::onError, Qt::UniqueConnection);
+        connect(helper, &ElevationHelper::downloadProgress, this, &ImageWriter::downloadProgress, Qt::UniqueConnection);
+        connect(helper, &ElevationHelper::verifyProgress, this, &ImageWriter::verifyProgress, Qt::UniqueConnection);
+        connect(helper, &ElevationHelper::writeProgress, this, 
+            [this](qint64 now, qint64 total) {
+                emit downloadProgress(now, total); // Reuse downloadProgress signal for write progress
+            }, 
+            Qt::UniqueConnection);
         
         startProgressPolling();
         
@@ -291,7 +293,6 @@ void ImageWriter::startWrite()
         }
         
         stopProgressPolling();
-        helper->deleteLater();
         return;
     }
 #else
@@ -352,13 +353,15 @@ void ImageWriter::startWrite()
         // Check if we're writing to a physical drive
         if (_dst.startsWith("\\\\.\\PHYSICALDRIVE"))
         {
-            ElevationHelper *helper = new ElevationHelper(this);
-            connect(helper, &ElevationHelper::error, this, &ImageWriter::onError);
-            connect(helper, &ElevationHelper::downloadProgress, this, &ImageWriter::downloadProgress);
-            connect(helper, &ElevationHelper::verifyProgress, this, &ImageWriter::verifyProgress);
-            connect(helper, &ElevationHelper::writeProgress, [this](qint64 now, qint64 total) {
-                emit downloadProgress(now, total); // Reuse downloadProgress signal for write progress
-            });
+            ElevationHelper *helper = ElevationHelper::instance();
+            connect(helper, &ElevationHelper::error, this, &ImageWriter::onError, Qt::UniqueConnection);
+            connect(helper, &ElevationHelper::downloadProgress, this, &ImageWriter::downloadProgress, Qt::UniqueConnection);
+            connect(helper, &ElevationHelper::verifyProgress, this, &ImageWriter::verifyProgress, Qt::UniqueConnection);
+            connect(helper, &ElevationHelper::writeProgress, this, 
+                [this](qint64 now, qint64 total) {
+                    emit downloadProgress(now, total); // Reuse downloadProgress signal for write progress
+                },
+                Qt::UniqueConnection);
             
             startProgressPolling();
             
@@ -372,8 +375,6 @@ void ImageWriter::startWrite()
                 _thread = nullptr;
                 stopProgressPolling();
             }
-            
-            helper->deleteLater();
         }
         else
         {
@@ -456,13 +457,15 @@ void ImageWriter::startWrite()
 #ifdef Q_OS_WIN
         if (_dst.startsWith("\\\\.\\PHYSICALDRIVE"))
         {
-            ElevationHelper *helper = new ElevationHelper(this);
-            connect(helper, &ElevationHelper::error, this, &ImageWriter::onError);
-            connect(helper, &ElevationHelper::downloadProgress, this, &ImageWriter::downloadProgress);
-            connect(helper, &ElevationHelper::verifyProgress, this, &ImageWriter::verifyProgress);
-            connect(helper, &ElevationHelper::writeProgress, [this](qint64 now, qint64 total) {
-                emit downloadProgress(now, total); // Reuse downloadProgress signal for write progress
-            });
+            ElevationHelper *helper = ElevationHelper::instance();
+            connect(helper, &ElevationHelper::error, this, &ImageWriter::onError, Qt::UniqueConnection);
+            connect(helper, &ElevationHelper::downloadProgress, this, &ImageWriter::downloadProgress, Qt::UniqueConnection);
+            connect(helper, &ElevationHelper::verifyProgress, this, &ImageWriter::verifyProgress, Qt::UniqueConnection);
+            connect(helper, &ElevationHelper::writeProgress, this, 
+                [this](qint64 now, qint64 total) {
+                    emit downloadProgress(now, total); // Reuse downloadProgress signal for write progress
+                },
+                Qt::UniqueConnection);
             
             startProgressPolling();
             
@@ -476,8 +479,6 @@ void ImageWriter::startWrite()
                 _thread = nullptr;
                 stopProgressPolling();
             }
-            
-            helper->deleteLater();
             return;
         }
         else
