@@ -495,17 +495,34 @@ ComboBox {
                     // Stop any ongoing animation
                     listScrollAnimation.stop()
                     
+                    // DEBUG: Log platform scroll behavior
+                    console.log("WheelEvent - pixelDelta.y:", event.pixelDelta.y,
+                                "angleDelta.y:", event.angleDelta.y,
+                                "inverted:", event.inverted,
+                                "platform:", Qt.platform.os)
+                    
                     // Get scroll delta - prefer pixel delta for smooth trackpads
                     var dy
                     if (event.pixelDelta && Math.abs(event.pixelDelta.y) > 0) {
                         // Trackpad or precision scroll - use pixel values directly
-                        dy = -event.pixelDelta.y
+                        dy = event.pixelDelta.y
                     } else {
                         // Mouse wheel - convert angle to pixels
                         // Standard: 120 units = 1 notch = 3 lines of scrolling
                         var notches = event.angleDelta.y / 120.0
-                        dy = -notches * root.itemHeight * root.wheelScrollItems
+                        dy = notches * root.itemHeight * root.wheelScrollItems
                     }
+                    
+                    // Platform-specific scroll direction handling:
+                    // - macOS with natural scrolling (inverted=true): deltas are already
+                    //   in the expected direction, negate to convert to contentY change
+                    // - Windows/Linux traditional (inverted=false): deltas are in hardware
+                    //   direction, use directly for contentY change
+                    if (event.inverted) {
+                        dy = -dy
+                    }
+                    
+                    console.log("Final dy:", dy)
                     
                     // Calculate new position with bounds checking
                     var newY = dropdownList.contentY + dy
