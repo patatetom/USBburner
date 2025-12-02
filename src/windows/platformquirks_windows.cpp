@@ -370,27 +370,23 @@ bool isScrollInverted(bool qtInvertedFlag) {
     
     // Check Windows registry for scroll direction setting
     // This setting is stored in PrecisionTouchPad for touchpads
-    // Value: 0 = traditional (down scrolls down), 1 = natural (down scrolls up)
+    // Value: 0 = natural (down scrolls up), 1 = traditional (down scrolls down)
     
     HKEY hKey;
-    DWORD scrollDirection = 0;
+    DWORD scrollDirection = 1;  // Default to traditional
     DWORD dataSize = sizeof(scrollDirection);
     
-    // Check precision touchpad setting first
+    // Check precision touchpad setting
     if (RegOpenKeyExW(HKEY_CURRENT_USER,
                       L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PrecisionTouchPad",
                       0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        if (RegQueryValueExW(hKey, L"ScrollDirection", NULL, NULL,
-                            (LPBYTE)&scrollDirection, &dataSize) == ERROR_SUCCESS) {
-            RegCloseKey(hKey);
-            // 1 = natural scrolling enabled
-            return scrollDirection == 1;
-        }
+        RegQueryValueExW(hKey, L"ScrollDirection", NULL, NULL,
+                        (LPBYTE)&scrollDirection, &dataSize);
         RegCloseKey(hKey);
     }
     
-    // Default to traditional scrolling if registry key not found
-    return false;
+    // 0 = natural scrolling (invert), 1 = traditional (don't invert)
+    return scrollDirection == 0;
 }
 
 } // namespace PlatformQuirks
