@@ -222,6 +222,9 @@ public:
     /* Returns true if online */
     Q_INVOKABLE bool isOnline();
 
+    /* Returns true if system has natural scrolling enabled (for Windows quirk) */
+    Q_INVOKABLE bool hasNaturalScrolling();
+
     /* Returns true if run on embedded Linux platform */
     Q_INVOKABLE bool isEmbeddedMode() const;
 

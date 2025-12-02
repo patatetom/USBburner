@@ -363,4 +363,30 @@ void execElevated(const QStringList& extraArgs) {
     Q_UNUSED(extraArgs);
 }
 
+bool hasNaturalScrolling() {
+    // Check Windows registry for scroll direction setting
+    // This setting is stored in PrecisionTouchPad for touchpads
+    // Value: 0 = traditional (down scrolls down), 1 = natural (down scrolls up)
+    
+    HKEY hKey;
+    DWORD scrollDirection = 0;
+    DWORD dataSize = sizeof(scrollDirection);
+    
+    // Check precision touchpad setting first
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                      L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PrecisionTouchPad",
+                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        if (RegQueryValueExW(hKey, L"ScrollDirection", NULL, NULL,
+                            (LPBYTE)&scrollDirection, &dataSize) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            // 1 = natural scrolling enabled
+            return scrollDirection == 1;
+        }
+        RegCloseKey(hKey);
+    }
+    
+    // Default to traditional scrolling if registry key not found
+    return false;
+}
+
 } // namespace PlatformQuirks

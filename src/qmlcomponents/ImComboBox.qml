@@ -495,12 +495,6 @@ ComboBox {
                     // Stop any ongoing animation
                     listScrollAnimation.stop()
                     
-                    // DEBUG: Log platform scroll behavior
-                    console.log("WheelEvent - pixelDelta.y:", event.pixelDelta.y,
-                                "angleDelta.y:", event.angleDelta.y,
-                                "inverted:", event.inverted,
-                                "platform:", Qt.platform.os)
-                    
                     // Get scroll delta - prefer pixel delta for smooth trackpads
                     var dy
                     if (event.pixelDelta && Math.abs(event.pixelDelta.y) > 0) {
@@ -513,16 +507,16 @@ ComboBox {
                         dy = notches * root.itemHeight * root.wheelScrollItems
                     }
                     
-                    // Platform-specific scroll direction handling:
-                    // - macOS with natural scrolling (inverted=true): deltas are already
-                    //   in the expected direction, negate to convert to contentY change
-                    // - Windows/Linux traditional (inverted=false): deltas are in hardware
-                    //   direction, use directly for contentY change
-                    if (event.inverted) {
+                    // Handle OS scroll direction preference (natural vs traditional).
+                    // - macOS/Linux: Qt correctly reports inverted flag
+                    // - Windows: Qt doesn't report scroll setting, use platform quirk
+                    var shouldInvert = event.inverted
+                    if (Qt.platform.os === "windows") {
+                        shouldInvert = imageWriter.hasNaturalScrolling()
+                    }
+                    if (shouldInvert) {
                         dy = -dy
                     }
-                    
-                    console.log("Final dy:", dy)
                     
                     // Calculate new position with bounds checking
                     var newY = dropdownList.contentY + dy

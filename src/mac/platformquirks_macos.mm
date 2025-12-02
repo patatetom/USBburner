@@ -110,4 +110,11 @@ void execElevated(const QStringList& extraArgs) {
     Q_UNUSED(extraArgs);
 }
 
+bool hasNaturalScrolling() {
+    // On macOS, Qt correctly reports the inverted flag in WheelEvent
+    // so we don't need a platform-specific workaround.
+    // Return false to indicate QML should rely on event.inverted instead.
+    return false;
+}
+
 } // namespace PlatformQuirks

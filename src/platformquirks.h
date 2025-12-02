@@ -159,6 +159,19 @@ namespace PlatformQuirks {
      * @param extraArgs Additional arguments to pass to the elevated process
      */
     void execElevated(const QStringList& extraArgs);
+
+    /**
+     * Check if the system is configured for natural (inverted) scrolling.
+     * 
+     * On Windows: Reads the PrecisionTouchPad registry setting. Qt does not
+     *             correctly report the inverted flag on Windows, so this
+     *             provides a workaround.
+     * On macOS: Returns false - Qt correctly reports inverted via WheelEvent.
+     * On Linux: Returns false - relies on Qt's inverted flag (DE-dependent).
+     * 
+     * @return true if natural scrolling is enabled, false for traditional
+     */
+    bool hasNaturalScrolling();
 }
 
 #endif // PLATFORMQUIRKS_H
