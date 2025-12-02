@@ -1928,11 +1928,6 @@ bool ImageWriter::isOnline()
     return hasBasicConnectivity;
 }
 
-bool ImageWriter::hasNaturalScrolling()
-{
-    return PlatformQuirks::hasNaturalScrolling();
-}
-
 void ImageWriter::pollNetwork()
 {
     isOnline();

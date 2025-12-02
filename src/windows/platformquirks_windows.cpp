@@ -363,7 +363,11 @@ void execElevated(const QStringList& extraArgs) {
     Q_UNUSED(extraArgs);
 }
 
-bool hasNaturalScrolling() {
+bool isScrollInverted(bool qtInvertedFlag) {
+    // On Windows, Qt doesn't correctly report the scroll direction setting.
+    // We read directly from the registry instead of trusting qtInvertedFlag.
+    Q_UNUSED(qtInvertedFlag);
+    
     // Check Windows registry for scroll direction setting
     // This setting is stored in PrecisionTouchPad for touchpads
     // Value: 0 = traditional (down scrolls down), 1 = natural (down scrolls up)

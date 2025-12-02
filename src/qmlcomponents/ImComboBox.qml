@@ -507,14 +507,8 @@ ComboBox {
                         dy = notches * root.itemHeight * root.wheelScrollItems
                     }
                     
-                    // Handle OS scroll direction preference (natural vs traditional).
-                    // - macOS/Linux: Qt correctly reports inverted flag
-                    // - Windows: Qt doesn't report scroll setting, use platform quirk
-                    var shouldInvert = event.inverted
-                    if (Qt.platform.os === "windows") {
-                        shouldInvert = imageWriter.hasNaturalScrolling()
-                    }
-                    if (shouldInvert) {
+                    // Handle OS scroll direction preference (natural vs traditional)
+                    if (PlatformHelper.isScrollInverted(event.inverted)) {
                         dy = -dy
                     }
                     

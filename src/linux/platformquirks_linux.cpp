@@ -572,11 +572,10 @@ void execElevated(const QStringList& extraArgs) {
     qWarning() << "Failed to exec pkexec:" << strerror(errno);
 }
 
-bool hasNaturalScrolling() {
+bool isScrollInverted(bool qtInvertedFlag) {
     // On Linux, Qt's inverted flag behavior varies by desktop environment.
-    // Most modern DEs (GNOME, KDE) correctly report it, so we rely on Qt.
-    // Return false to indicate QML should rely on event.inverted instead.
-    return false;
+    // Most modern DEs (GNOME, KDE) correctly report it, so we pass through.
+    return qtInvertedFlag;
 }
 
 } // namespace PlatformQuirks
